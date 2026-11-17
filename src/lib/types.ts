@@ -207,6 +207,94 @@ export interface StructuredBriefing {
   goDeeper: BriefingGoDeeper[];
 }
 
+// Multi-source radar types. New feed fields stay optional so older
+// .feed snapshots and tests keep parsing.
+export type SignalChannel = "rss" | "youtube" | "podcast" | "x" | "browser" | "search";
+
+export type RadarSourceStatus = "active" | "candidate" | "muted";
+
+export type RadarWindowDays = 1 | 3 | 7;
+
+export interface RadarSource {
+  id: string;                 // Stable ID, e.g. "yt:UC..." or "x:@karpathy"
+  channel: SignalChannel;
+  label: string;
+  url: string;                // Feed URL, channel Atom URL, profile URL, or domain
+  handle?: string;            // e.g. "@karpathy"
+  status: RadarSourceStatus;
+  addedAt: string;            // ISO timestamp
+}
+
+export interface SignalEngagement {
+  dwellSeconds?: number;
+  scrollDepth?: number;       // 0..1
+  likesOrReplies?: number;
+}
+
+export interface SignalItem {
+  id: string;                 // Stable hash from canonicalUrl
+  channel: SignalChannel;
+  sourceId: string;           // Maps to RadarSource.id & source_stats.json
+  sourceName: string;         // Display name (channel/podcast/handle/domain)
+  authorHandle?: string;
+  title: string;
+  url: string;
+  canonicalUrl: string;       // Normalized URL without tracking params
+  publishedAt: string;        // ISO timestamp
+  capturedAt: string;         // ISO timestamp when ingested into .radar/
+  rawLengthHint?: string;     // e.g. "42 min", "1800 words", "Thread (6)"
+  snippet: string;            // Up to 1500 chars of clean text / transcript / show notes
+  outboundUrls?: string[];    // Links found in tweets or show notes
+  thumbnail?: string;
+  engagement?: SignalEngagement;
+}
+
+export interface SourceStats {
+  sourceId: string;
+  sourceName: string;
+  channel: SignalChannel;
+  url?: string;
+  handle?: string;
+  fetchedCount: number;
+  recommendedCount: number;
+  skippedCount: number;
+  capturedCount: number;      // User clicked Capture into library/
+  dismissedCount: number;
+  lastSeenAt: string;
+}
+
+export interface RelatedMention {
+  title: string;
+  url: string;
+  channel: SignalChannel;
+  sourceName: string;
+}
+
+export interface SourceRecommendation {
+  sourceId: string;
+  sourceName: string;
+  channel: SignalChannel;
+  url?: string;
+  handle?: string;
+  reason: string;
+  stats?: {
+    fetchedCount: number;
+    recommendedCount: number;
+    capturedCount: number;
+  };
+}
+
+export type RadarFeedbackAction = "capture" | "dismiss" | "follow" | "mute";
+
+export interface RadarFeedbackRequest {
+  action: RadarFeedbackAction;
+  sourceId: string;
+  url?: string;
+  channel?: SignalChannel;
+  sourceName?: string;
+  handle?: string;
+}
+
 // Feed types
 export interface FeedItem {
   id: string;                    // Generated hash of URL
@@ -216,6 +304,14 @@ export interface FeedItem {
   publishedAt: string;           // ISO date
   source: string;                // News source name
   thumbnail?: string;            // Thumbnail image URL
+  channel?: SignalChannel;
+  sourceId?: string;
+  sourceName?: string;
+  sourceStatus?: RadarSourceStatus;
+  rawLengthHint?: string;
+  topicCluster?: string;
+  isPrimarySource?: boolean;
+  relatedMentions?: RelatedMention[];
   scoring: {
     overall: number;             // 0-100 combined score
     action: "recommend" | "skip";
@@ -234,6 +330,9 @@ export interface FeedSignals {
   radarCount: number;        // Number of configured interest radars
   libraryCount: number;
   interactionCount: number;  // Total: starred + dismissed + learned + knew
+  windowDays?: RadarWindowDays;
+  channelCounts?: Partial<Record<SignalChannel, number>>;
+  foldedDuplicates?: number;
 }
 
 export interface FeedCache {
@@ -244,6 +343,11 @@ export interface FeedCache {
   briefing?: StructuredBriefing;  // AI-generated structured briefing
   signals?: FeedSignals;         // What the AI considered when filtering
   insights?: InsightItem[];      // AI-generated insights from user's reading behavior
+  windowDays?: RadarWindowDays;
+  sourceRecommendations?: {
+    follow: SourceRecommendation[];
+    mute: SourceRecommendation[];
+  };
 }
 
 // Notebook types

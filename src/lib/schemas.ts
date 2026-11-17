@@ -69,3 +69,57 @@ export const AnalysisSchema = z.object({
   userRating: z.number().min(0.5).max(5).optional(),
   userRatingAt: z.string().optional(),
 }).passthrough().prefault({});
+
+export const SignalChannelSchema = z.enum(["rss", "youtube", "podcast", "x", "browser", "search"]);
+
+const SignalEngagementSchema = z.object({
+  dwellSeconds: z.number().optional(),
+  scrollDepth: z.number().optional(),
+  likesOrReplies: z.number().optional(),
+}).partial();
+
+export const IngestItemSchema = z.object({
+  id: z.string().optional(),
+  channel: SignalChannelSchema,
+  sourceId: z.string().min(1),
+  sourceName: z.string().min(1),
+  authorHandle: z.string().optional(),
+  title: z.string().min(1),
+  url: z.string().min(1),
+  canonicalUrl: z.string().optional(),
+  publishedAt: z.string().optional(),
+  capturedAt: z.string().optional(),
+  rawLengthHint: z.string().optional(),
+  snippet: z.string().default(""),
+  outboundUrls: z.array(z.string()).optional(),
+  thumbnail: z.string().optional(),
+  engagement: SignalEngagementSchema.optional(),
+});
+
+export const RadarIngestRequestSchema = z.object({
+  items: z.array(IngestItemSchema).max(100),
+});
+
+export const RadarSourceCreateSchema = z.object({
+  channel: z.enum(["rss", "youtube", "podcast", "x"]),
+  url: z.string().min(1),
+  label: z.string().optional(),
+  handle: z.string().optional(),
+});
+
+export const RadarSourcePatchSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["active", "candidate", "muted"]).optional(),
+  delete: z.boolean().optional(),
+}).refine((value) => value.delete === true || value.status !== undefined, {
+  message: "status or delete is required",
+});
+
+export const RadarFeedbackSchema = z.object({
+  action: z.enum(["capture", "dismiss", "follow", "mute"]),
+  sourceId: z.string().min(1),
+  url: z.string().optional(),
+  channel: SignalChannelSchema.optional(),
+  sourceName: z.string().optional(),
+  handle: z.string().optional(),
+});

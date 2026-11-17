@@ -4,6 +4,7 @@ import { getSourceType, getTypeFromExtension } from "@/lib/content";
 import { createPendingSource, ensureLibraryExists } from "@/lib/storage";
 import { SourceType } from "@/lib/types";
 import { processSourceInBackground, processFileInBackground } from "@/lib/capturePipeline";
+import { recordCaptureForUrl } from "@/lib/radarStorage";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +38,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { success: false, error: "url, text, or html is required" },
         { status: 400 }
       );
+    }
+
+    if (typeof url === "string" && url) {
+      try {
+        await recordCaptureForUrl(url);
+      } catch (error) {
+        console.error("[capture] radar capture stat failed:", error);
+      }
     }
 
     await ensureLibraryExists();

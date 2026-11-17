@@ -232,6 +232,35 @@
         </label>
       </div>
     </div>
+    <div class="card">
+      <div class="toggle-row">
+        <div class="grow">
+          <div class="toggle-title">Browser Reading Radar</div>
+          <div class="toggle-desc">When you actively read a page for a minute, send the title and a short excerpt to your local radar. Mail, chat, search, and banking sites are skipped.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="browser-radar-toggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="toggle-row">
+        <div class="grow">
+          <div class="toggle-title">X Stream Radar</div>
+          <div class="toggle-desc">While you browse Home, Following, Lists, or a thread, collect tweets in view for the radar. Bookmarks still use auto-capture above.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="x-radar-toggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="toggle-title">Excluded domains</div>
+      <div class="toggle-desc" style="margin-bottom: 8px;">Comma-separated hosts the Browser Reading Radar should ignore, in addition to the built-in list.</div>
+      <input id="excluded-domains" type="text" placeholder="example.com, news.ycombinator.com" style="width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;" />
+    </div>
 
     <footer>
       Local-first: captures go to your own machine, never to a server.

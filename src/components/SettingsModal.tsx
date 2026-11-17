@@ -5,6 +5,7 @@ import { X, Plus, Copy, Check, Sun, Moon, Monitor, Bot, RefreshCw, Terminal, Ale
 import { theme } from "@/lib/theme";
 import type { ThemeMode, RssFeedSource } from "@/lib/storage";
 import { DEFAULT_RSS_FEEDS, SUGGESTED_SEARCH_SOURCES } from "@/lib/config";
+import { RadarSourcesSettings } from "@/components/radar/RadarSourcesSettings";
 import { AGENT_PROVIDER_DETAILS, type AgentProvider, type AgentStatus } from "@/lib/agentTypes";
 
 export interface SettingsModalProps {
@@ -598,6 +599,13 @@ export function SettingsModal({
                 <p className="text-xs text-gray-400 mt-2">Subreddit feeds: <code className="text-xs">reddit.com/r/SUBREDDIT/.rss</code></p>
               </div>
             )}
+
+            <RadarSourcesSettings
+              active={isOpen && activeTab === "feed"}
+              palette={palette}
+              rssFeedKey={rssFeeds.map((feed) => feed.url).join("|")}
+              onRssFeedsChange={onRssFeedsChange}
+            />
 
             {/* Web Search */}
             {onSearchSourcesChange && (
