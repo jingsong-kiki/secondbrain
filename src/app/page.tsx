@@ -747,6 +747,12 @@ function HomeContent() {
                   onCapture={handleCaptureUrl}
                   onDismiss={feed.dismissItem}
                   onRefresh={feed.refreshFeed}
+                  windowDays={feed.windowDays}
+                  onWindowDaysChange={feed.changeWindow}
+                  sourceRecommendations={feed.sourceRecommendations}
+                  onFollowSource={feed.followSource}
+                  onMuteSource={feed.muteSource}
+                  onRadarFeedback={feed.recordRadarFeedback}
                   onAddContext={(text, title) => {
                     addContext(text, title);
                     setIsCoLearningOpen(true);
