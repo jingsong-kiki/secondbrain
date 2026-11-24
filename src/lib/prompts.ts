@@ -524,6 +524,7 @@ Tell the user NEW information they don't already know. The briefing itself shoul
 4. **Make the briefing standalone valuable** - Even if they don't click any links, they should learn something
 5. **Use bold for key facts** - Use **bold** around key names, numbers, and terms so they pop out when scanning
 6. **Connections to user's knowledge** - If a news item connects to something in the user's library or interactions, weave it into the sentence naturally and bold it, e.g. "...which builds on your **'wrong shape software'** concept" or "...relevant to your notes on **prompt engineering**"
+7. **Cross-channel radar** - When an item names a channel, length, or related mentions, say where the story converges and which source is the primary one. If recent browser reading misses that cluster, say so in one clause.
 
 ## Output Format
 Return a JSON object:
@@ -550,4 +551,71 @@ Return a JSON object:
 - "goDeeper": Only 2-3 items worth clicking. "reason" = what extra detail the article has.
 
 Respond with ONLY valid JSON, no markdown code blocks.`;
+}
+
+export function promptRadarTriage(input: {
+  userProfile: string;
+  interests: string[];
+  libraryContext: string;
+  interactionContext: string;
+  browserContext: string;
+  batchContext: string;
+}): string {
+  const interests = input.interests.length > 0
+    ? input.interests.map((interest) => `- ${interest}`).join("\n")
+    : "None configured";
+  const profile = input.userProfile.trim()
+    ? input.userProfile.trim().slice(0, 4000)
+    : "No USER.md profile.";
+  return `You are triaging a multi-source radar for a busy knowledge worker. Decide what deserves attention, cluster items that are the same story, and mark the primary source.
+
+## User profile
+${profile}
+
+## Configured interests
+${interests}
+
+## Library
+${input.libraryContext || "Empty library"}
+
+${input.interactionContext || "No recent highlight or concept reactions."}
+
+${input.browserContext || "No recent high-dwell browser reading."}
+
+## Radar batch
+${input.batchContext}
+
+## Rules
+- Recommend only items that add something new, concrete, or timely for this person.
+- Skip duplicates of the library, generic explainers, and thin reactions.
+- topicCluster is a short lowercase phrase shared by items about the same story. Items that are not the same story get different clusters.
+- isPrimarySource is true for the item a reader should open: the original report, the talk, or the show — not a quote tweet or a skim of the same URL.
+- score is 0-100. Use action "recommend" at 75 or above and "skip" below that.
+
+## Output
+Return a JSON array with one object per batch item:
+[
+  {"index": 1, "score": 88, "action": "recommend", "topicCluster": "model release", "isPrimarySource": true, "whyRead": "Primary writeup of the release"},
+  {"index": 2, "score": 30, "action": "skip", "topicCluster": "model release", "isPrimarySource": false, "whySkip": "Quote of the same announcement"}
+]
+
+index is 1-based. Respond with ONLY the JSON array.`;
+}
+
+export function promptSourceReasons(input: {
+  follow: { sourceId: string; sourceName: string; channel: string; reason: string }[];
+  mute: { sourceId: string; sourceName: string; channel: string; reason: string }[];
+}): string {
+  return `Rewrite these source suggestions with a shorter, concrete reason. Do not add or remove sources.
+
+Follow:
+${JSON.stringify(input.follow)}
+
+Mute:
+${JSON.stringify(input.mute)}
+
+Return JSON:
+{"follow":[{"sourceId":"...","reason":"under 80 chars"}],"mute":[{"sourceId":"...","reason":"under 80 chars"}]}
+
+Respond with ONLY the JSON object.`;
 }

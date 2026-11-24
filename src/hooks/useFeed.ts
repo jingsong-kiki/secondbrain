@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useRef } from "react";
-import { FeedItem, FeedSignals, InsightItem, StructuredBriefing } from "@/lib/types";
+import { FeedItem, FeedSignals, InsightItem, RadarFeedbackRequest, RadarWindowDays, SourceRecommendation, StructuredBriefing } from "@/lib/types";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 
 interface FeedState {
@@ -13,6 +13,25 @@ interface FeedState {
   briefing?: StructuredBriefing;
   signals?: FeedSignals;
   insights?: InsightItem[];
+  sourceRecommendations?: {
+    follow: SourceRecommendation[];
+    mute: SourceRecommendation[];
+  };
+}
+
+interface FeedPayload {
+  items?: FeedItem[];
+  interests?: string[];
+  generatedAt?: string | null;
+  fromCache?: boolean;
+  message?: string;
+  briefing?: StructuredBriefing;
+  signals?: FeedSignals;
+  insights?: InsightItem[];
+  sourceRecommendations?: FeedState["sourceRecommendations"];
+  windowDays?: RadarWindowDays;
+  starredBriefingTexts?: string[];
+  readBriefingTexts?: string[];
 }
 
 export function useFeed() {
@@ -30,6 +49,10 @@ export function useFeed() {
   const [readBriefingTexts, setReadBriefingTexts] = useState<Set<string>>(new Set());
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [windowDays, setWindowDays] = useState<RadarWindowDays>(3);
+  const windowDaysRef = useRef<RadarWindowDays>(3);
+  const feedRef = useRef(feed);
+  feedRef.current = feed;
   // Mirrors selectedDate so an in-flight refresh can tell whether the user
   // navigated to a past snapshot while it was generating.
   const selectedDateRef = useRef<string | null>(null);
@@ -86,32 +109,37 @@ export function useFeed() {
     }).catch(() => {});
   }, []);
 
-  const loadFeed = useCallback(async () => {
+  const applyFeedPayload = useCallback((payload: FeedPayload, fromCache: boolean) => {
+    if (payload.windowDays) {
+      windowDaysRef.current = payload.windowDays;
+      setWindowDays(payload.windowDays);
+    }
+    setFeed({
+      items: payload.items ?? [],
+      interests: payload.interests ?? [],
+      generatedAt: payload.generatedAt ?? null,
+      fromCache,
+      message: payload.message,
+      briefing: payload.briefing,
+      signals: payload.signals,
+      insights: payload.insights,
+      sourceRecommendations: payload.sourceRecommendations,
+    });
+    if (payload.starredBriefingTexts) setStarredTexts(new Set(payload.starredBriefingTexts));
+    if (payload.readBriefingTexts) setReadBriefingTexts(new Set(payload.readBriefingTexts));
+  }, []);
+
+  const loadFeed = useCallback(async (days?: RadarWindowDays) => {
     setLoading(true);
     setError(null);
+    const requested = days ?? windowDaysRef.current;
 
     try {
-      const res = await fetch("/api/feed");
+      const res = await fetch(`/api/feed?days=${requested}`);
       const data = await res.json();
 
       if (data.success && data.feed) {
-        const feedItems = data.feed.items ?? [];
-        setFeed({
-          items: feedItems,
-          interests: data.feed.interests ?? [],
-          generatedAt: data.feed.generatedAt ?? null,
-          fromCache: data.feed.fromCache ?? false,
-          message: data.feed.message,
-          briefing: data.feed.briefing,
-          signals: data.feed.signals,
-          insights: data.feed.insights,
-        });
-        if (data.feed.starredBriefingTexts) {
-          setStarredTexts(new Set(data.feed.starredBriefingTexts));
-        }
-        if (data.feed.readBriefingTexts) {
-          setReadBriefingTexts(new Set(data.feed.readBriefingTexts));
-        }
+        applyFeedPayload(data.feed, data.feed.fromCache ?? false);
         if (data.availableDates) {
           setAvailableDates(data.availableDates);
         }
@@ -126,7 +154,7 @@ export function useFeed() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyFeedPayload]);
 
   const refreshFeed = useCallback(async () => {
     setLoading(true);
@@ -134,7 +162,11 @@ export function useFeed() {
     selectDate(null);
 
     try {
-      const res = await fetch("/api/feed", { method: "POST" });
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ windowDays: windowDaysRef.current }),
+      });
       const data = await res.json();
 
       if (data.success && data.feed) {
@@ -147,23 +179,7 @@ export function useFeed() {
         if (selectedDateRef.current !== null) {
           return;
         }
-        const feedItems = data.feed.items ?? [];
-        setFeed({
-          items: feedItems,
-          interests: data.feed.interests ?? [],
-          generatedAt: data.feed.generatedAt ?? null,
-          fromCache: false,
-          message: data.feed.message,
-          briefing: data.feed.briefing,
-          signals: data.feed.signals,
-          insights: data.feed.insights,
-        });
-        if (data.feed.starredBriefingTexts) {
-          setStarredTexts(new Set(data.feed.starredBriefingTexts));
-        }
-        if (data.feed.readBriefingTexts) {
-          setReadBriefingTexts(new Set(data.feed.readBriefingTexts));
-        }
+        applyFeedPayload(data.feed, false);
       } else {
         setError(data.error || "Failed to refresh feed");
       }
@@ -172,7 +188,7 @@ export function useFeed() {
     } finally {
       setLoading(false);
     }
-  }, [selectDate]);
+  }, [applyFeedPayload, selectDate]);
 
   const loadFeedForDate = useCallback(async (date: string | null) => {
     if (!date) {
@@ -191,22 +207,7 @@ export function useFeed() {
       const data = await res.json();
 
       if (data.success && data.feed) {
-        setFeed({
-          items: data.feed.items ?? [],
-          interests: data.feed.interests ?? [],
-          generatedAt: data.feed.generatedAt ?? null,
-          fromCache: true,
-          message: data.feed.message,
-          briefing: data.feed.briefing,
-          signals: data.feed.signals,
-          insights: data.feed.insights,
-        });
-        if (data.feed.starredBriefingTexts) {
-          setStarredTexts(new Set(data.feed.starredBriefingTexts));
-        }
-        if (data.feed.readBriefingTexts) {
-          setReadBriefingTexts(new Set(data.feed.readBriefingTexts));
-        }
+        applyFeedPayload(data.feed, true);
         if (data.availableDates) {
           setAvailableDates(data.availableDates);
         }
@@ -218,7 +219,67 @@ export function useFeed() {
     } finally {
       setLoading(false);
     }
+  }, [applyFeedPayload, loadFeed, selectDate]);
+
+  const changeWindow = useCallback(async (days: RadarWindowDays) => {
+    windowDaysRef.current = days;
+    setWindowDays(days);
+    selectDate(null);
+    await loadFeed(days);
   }, [loadFeed, selectDate]);
+
+  const recordRadarFeedback = useCallback((payload: RadarFeedbackRequest) => {
+    if (payload.action === "mute") {
+      setFeed((prev) => ({
+        ...prev,
+        items: prev.items.filter((item) => item.sourceId !== payload.sourceId),
+        sourceRecommendations: prev.sourceRecommendations && {
+          follow: prev.sourceRecommendations.follow.filter((item) => item.sourceId !== payload.sourceId),
+          mute: prev.sourceRecommendations.mute.filter((item) => item.sourceId !== payload.sourceId),
+        },
+      }));
+    } else if (payload.action === "follow") {
+      setFeed((prev) => ({
+        ...prev,
+        items: prev.items.map((item) => item.sourceId === payload.sourceId ? { ...item, sourceStatus: "active" as const } : item),
+        sourceRecommendations: prev.sourceRecommendations && {
+          follow: prev.sourceRecommendations.follow.filter((item) => item.sourceId !== payload.sourceId),
+          mute: prev.sourceRecommendations.mute,
+        },
+      }));
+    }
+    fetch("/api/radar/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }, []);
+
+  const followSource = useCallback((recommendation: SourceRecommendation) => {
+    recordRadarFeedback({
+      action: "follow",
+      sourceId: recommendation.sourceId,
+      channel: recommendation.channel,
+      sourceName: recommendation.sourceName,
+      url: recommendation.url,
+      handle: recommendation.handle,
+    });
+  }, [recordRadarFeedback]);
+
+  const muteSource = useCallback((sourceId: string) => {
+    const current = feedRef.current;
+    const item = current.items.find((entry) => entry.sourceId === sourceId);
+    const recommendation = current.sourceRecommendations?.mute.find((entry) => entry.sourceId === sourceId)
+      ?? current.sourceRecommendations?.follow.find((entry) => entry.sourceId === sourceId);
+    recordRadarFeedback({
+      action: "mute",
+      sourceId,
+      channel: item?.channel ?? recommendation?.channel,
+      sourceName: item?.sourceName ?? recommendation?.sourceName,
+      url: recommendation?.url ?? item?.url,
+      handle: recommendation?.handle,
+    });
+  }, [recordRadarFeedback]);
 
   const dismissItem = useCallback((id: string) => {
     setDismissedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -237,11 +298,17 @@ export function useFeed() {
     readBriefingTexts,
     availableDates,
     selectedDate,
+    windowDays,
+    sourceRecommendations: feed.sourceRecommendations,
     loading,
     error,
     loadFeed,
     refreshFeed,
     loadFeedForDate,
+    changeWindow,
+    followSource,
+    muteSource,
+    recordRadarFeedback,
     dismissItem,
     markBriefingRead,
     markBriefingUnread,

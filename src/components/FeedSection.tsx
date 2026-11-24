@@ -1,9 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Rss, RefreshCw, ChevronDown, ChevronUp, X, ExternalLink, Plus, Filter, Check, Star } from "lucide-react";
-import { FeedItem, FeedSignals, InsightItem, StructuredBriefing as StructuredBriefingType } from "@/lib/types";
+import { Rss, RefreshCw, ChevronDown, ChevronUp, Filter, Check, Star, Plus } from "lucide-react";
+import { FeedItem, FeedSignals, InsightItem, RadarFeedbackRequest, RadarWindowDays, SourceRecommendation, StructuredBriefing as StructuredBriefingType } from "@/lib/types";
 import { formatRelativeTime } from "@/lib/utils";
+import { ChannelSignalsBar } from "@/components/radar/ChannelSignalsBar";
+import { RadarFeedCard } from "@/components/radar/RadarFeedCard";
+import { SourceRecommendationsSection } from "@/components/radar/SourceRecommendationsSection";
+import { WindowSelector } from "@/components/radar/WindowSelector";
 
 interface FeedSectionProps {
   items: FeedItem[];
@@ -22,6 +26,12 @@ interface FeedSectionProps {
   onCapture: (url: string) => void;
   onDismiss: (id: string) => void;
   onRefresh: () => void;
+  windowDays?: RadarWindowDays;
+  onWindowDaysChange?: (days: RadarWindowDays) => void;
+  sourceRecommendations?: { follow: SourceRecommendation[]; mute: SourceRecommendation[] };
+  onFollowSource?: (recommendation: SourceRecommendation) => void;
+  onMuteSource?: (sourceId: string) => void;
+  onRadarFeedback?: (feedback: RadarFeedbackRequest) => void;
   onAddContext?: (text: string, title: string) => void;
   onMarkBriefingRead?: (text: string, urls: string[]) => void;
   onMarkBriefingUnread?: (text: string, urls: string[]) => void;
@@ -52,6 +62,12 @@ export const FeedSection = React.memo(function FeedSection({
   onCapture,
   onDismiss,
   onRefresh,
+  windowDays = 3,
+  onWindowDaysChange,
+  sourceRecommendations,
+  onFollowSource,
+  onMuteSource,
+  onRadarFeedback,
   onAddContext,
   onMarkBriefingRead,
   onMarkBriefingUnread,
@@ -82,6 +98,15 @@ export const FeedSection = React.memo(function FeedSection({
         </div>
 
         <div className="flex items-center gap-3">
+          {onWindowDaysChange && (
+            <WindowSelector
+              days={windowDays}
+              disabled={loading || Boolean(selectedDate)}
+              onChange={onWindowDaysChange}
+              palette={palette}
+              theme={theme}
+            />
+          )}
           {generatedAt && (
             <span className="text-xs" style={{ color: theme.textMuted }}>
               {fromCache ? "Cached" : "Updated"} {formatRelativeTime(generatedAt)}
@@ -151,7 +176,7 @@ export const FeedSection = React.memo(function FeedSection({
 
       {/* Personalization signals */}
       {items.length > 0 && !loading && signals && (
-        <SignalsBar signals={signals} palette={palette} theme={theme} />
+        <ChannelSignalsBar signals={signals} palette={palette} theme={theme} />
       )}
 
       {/* Error state */}
@@ -177,6 +202,17 @@ export const FeedSection = React.memo(function FeedSection({
       {/* Insights */}
       {insights && insights.length > 0 && !loading && (
         <InsightsSection insights={insights} palette={palette} theme={theme} onAddContext={onAddContext} />
+      )}
+
+      {!loading && sourceRecommendations && onFollowSource && onMuteSource && (
+        <SourceRecommendationsSection
+          follow={sourceRecommendations.follow}
+          mute={sourceRecommendations.mute}
+          onFollow={onFollowSource}
+          onMute={onMuteSource}
+          palette={palette}
+          theme={theme}
+        />
       )}
 
       {/* Message (empty state or degraded mode) */}
@@ -242,12 +278,31 @@ export const FeedSection = React.memo(function FeedSection({
           {recommendedItems.map((item) => {
             const originalIndex = items.findIndex(i => i.id === item.id);
             return (
-              <FeedCard
+              <RadarFeedCard
                 key={item.id}
                 item={item}
                 index={originalIndex + 1}
                 onCapture={onCapture}
-                onDismiss={onDismiss}
+                onDismiss={(id) => {
+                  onDismiss(id);
+                  if (item.sourceId) {
+                    onRadarFeedback?.({
+                      action: "dismiss",
+                      sourceId: item.sourceId,
+                      url: item.url,
+                      channel: item.channel,
+                      sourceName: item.sourceName,
+                    });
+                  }
+                }}
+                onFollow={onFollowSource ? (sourceId) => onFollowSource({
+                  sourceId,
+                  sourceName: item.sourceName || item.source,
+                  channel: item.channel || "rss",
+                  url: item.url,
+                  reason: "Follow from feed",
+                }) : undefined}
+                onMute={onMuteSource}
                 formatRelativeTime={formatRelativeTime}
                 theme={theme}
               />
@@ -342,7 +397,7 @@ function FeedLoadingState({
   }, []);
 
   const steps = [
-    { label: searchConfigured ? "Fetch RSS feeds and search the news" : "Fetch your RSS feeds", doneAt: 10 },
+    { label: searchConfigured ? "Fetch RSS, YouTube, podcasts, and search" : "Fetch RSS, YouTube, and podcasts", doneAt: 10 },
     { label: "Agent reads every story, picks what's worth your time", doneAt: 40 },
     { label: "Write your briefing", doneAt: Infinity },
   ];
@@ -419,31 +474,6 @@ function FeedLoadingState({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Signals bar: one-line summary of what sources the feed is curated from
- */
-function SignalsBar({
-  signals,
-  palette,
-  theme,
-}: {
-  signals?: FeedSignals;
-  palette: Record<number, string>;
-  theme: Record<string, string>;
-}) {
-  const parts: string[] = [];
-  if (signals?.rssFeedCount) parts.push(`${signals.rssFeedCount} RSS feed${signals.rssFeedCount > 1 ? "s" : ""}`);
-  if (signals?.radarCount) parts.push(`${signals.radarCount} configured radar${signals.radarCount > 1 ? "s" : ""}`);
-  if (parts.length === 0) return null;
-
-  return (
-    <div className="px-3 mb-4 text-xs" style={{ color: theme.textMuted }}>
-      <span>Curated from </span>
-      <span style={{ color: palette[600] }}>{parts.join(" and ")}</span>
     </div>
   );
 }
@@ -879,160 +909,3 @@ function TextWithBold({
   );
 }
 
-/**
- * Pinterest-style feed card with thumbnail
- */
-function FeedCard({
-  item,
-  index,
-  onCapture,
-  onDismiss,
-  formatRelativeTime,
-  theme,
-}: {
-  item: FeedItem;
-  index: number;
-  onCapture: (url: string) => void;
-  onDismiss: (id: string) => void;
-  formatRelativeTime: (date: string) => string;
-  theme: Record<string, string>;
-}) {
-  const [imgError, setImgError] = useState(false);
-  const [hovering, setHovering] = useState(false);
-
-  // Accent color based on action
-  const accentColor = item.scoring.action === "recommend" ? "#059669" : "#6b7280";
-
-  // Use favicon as fallback if no thumbnail
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${item.source}&sz=64`;
-
-  return (
-    <div
-      id={`feed-item-${index}`}
-      className="rounded-xl border bg-white dark:bg-zinc-900 overflow-hidden transition-all hover:shadow-md group"
-      style={{
-        borderColor: theme.border,
-        ["--tw-ring-color" as string]: accentColor,
-      }}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
-    >
-      {/* Thumbnail / Image area */}
-      <div className="relative h-32 bg-gradient-to-br from-slate-100 to-slate-50 overflow-hidden">
-        {item.thumbnail && !imgError ? (
-          <img
-            src={item.thumbnail}
-            alt=""
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <img
-              src={faviconUrl}
-              alt=""
-              className="w-12 h-12 opacity-30"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          </div>
-        )}
-
-        {/* Index badge */}
-        <div
-          className="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm"
-          style={{ backgroundColor: accentColor }}
-        >
-          {index}
-        </div>
-
-        {/* Action buttons on hover */}
-        <div
-          className={`absolute inset-0 bg-black/40 flex items-center justify-center gap-2 transition-opacity ${
-            hovering ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onCapture(item.url);
-            }}
-            className="px-3 py-1.5 bg-white dark:bg-zinc-700 rounded-lg text-xs font-medium shadow-sm hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors flex items-center gap-1"
-            data-track="feed.card_save"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Save
-          </button>
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 bg-white/90 dark:bg-zinc-700/90 rounded-lg text-xs font-medium shadow-sm hover:bg-white dark:hover:bg-zinc-600 transition-colors flex items-center gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Open
-          </a>
-        </div>
-
-        {/* Dismiss button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDismiss(item.id);
-          }}
-          className={`absolute top-2 right-2 p-1 rounded-full bg-white/80 dark:bg-zinc-700/80 hover:bg-white dark:hover:bg-zinc-600 transition-all ${
-            hovering ? "opacity-100" : "opacity-0"
-          }`}
-          data-track="feed.card_dismiss"
-        >
-          <X className="w-3.5 h-3.5" style={{ color: theme.textMuted }} />
-        </button>
-      </div>
-
-      {/* Content */}
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block p-3"
-      >
-        {/* Title */}
-        <h3
-          className="text-sm font-medium leading-snug line-clamp-2 mb-1 group-hover:underline"
-          style={{ color: theme.text }}
-        >
-          {item.title}
-        </h3>
-
-        {/* Source + Time */}
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: theme.textMuted }}>
-          <span>{item.source}</span>
-          <span>·</span>
-          <span>{formatRelativeTime(item.publishedAt)}</span>
-        </div>
-
-        {/* Why read */}
-        {item.scoring.whyRead && (
-          <p
-            className="mt-2 text-xs leading-relaxed"
-            style={{ color: theme.textMuted }}
-          >
-            {item.scoring.whyRead}
-          </p>
-        )}
-        {/* Connects to existing library item */}
-        {item.scoring.connectsTo && (
-          <div
-            className="mt-2 text-xs flex items-start gap-1.5 px-2 py-1.5 rounded-md"
-            style={{ backgroundColor: `${accentColor}10`, color: accentColor }}
-          >
-            <span className="opacity-70 flex-shrink-0">Related:</span>
-            <span className="font-medium">{item.scoring.connectsTo}</span>
-          </div>
-        )}
-      </a>
-    </div>
-  );
-}

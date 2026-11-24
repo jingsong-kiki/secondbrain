@@ -113,7 +113,7 @@ Want a guided path? See [docs/ONBOARDING.md](docs/ONBOARDING.md).
 <a id="chrome-extension"></a>
 ## Capture anything in one click
 
-The optional **Chrome extension** captures pages exactly as you see them — including logged-in pages, JS-heavy apps, and tweets. Bookmark a tweet on X and it lands in your library automatically (you can turn that off).
+The optional **Chrome extension** captures pages exactly as you see them — including logged-in pages, JS-heavy apps, and tweets. Bookmark a tweet on X and it lands in your library automatically (you can turn that off). It can also passively collect X stream tweets and high-dwell browser reading signals into your local For You radar (configurable on the extension welcome page).
 
 Load it from `chrome://extensions` → **Load unpacked** → select the `extension/` folder. A welcome page opens, checks the connection, and walks you through the rest.
 
@@ -149,12 +149,13 @@ Each Library item is a small folder of files. Each Notebook item is a small fold
 <details>
 <summary><b>Feed generation</b></summary>
 
-The For You feed has two inputs:
+The For You feed aggregates signals over a configurable time window (24h / 3d / 7d) from multiple sources:
 
-- RSS feeds, enabled by default and editable in **Settings → Feed**.
+- RSS feeds, YouTube channels (Atom + best-effort captions), and Podcast RSS feeds (show notes), configurable in **Settings → Feed**.
+- Optional passive X stream and high-dwell browser reading signals pushed from the Chrome extension to `/api/radar/ingest`.
 - Optional web search, enabled only when you add a [Brave Search API key](https://brave.com/search/api/).
 
-Radar topics from Settings tune both feed ranking and web-search queries, so the briefing stays connected to what you already care about.
+Signals are buffered locally under `.radar/`, deduplicated across channels with primary-source folding, scored against your library and radar topics, and surfaced with source Follow / Mute recommendations.
 
 To enable web search:
 

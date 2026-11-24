@@ -610,9 +610,13 @@ export async function generateBriefing(
     .sort((a, b) => b.scoring.overall - a.scoring.overall)
     .slice(0, 20);
 
-  const feedContext = topItems.map((item, i) =>
-    `${i + 1}. "${item.title}" (${item.source}) - ${item.scoring.whyRead || ""}`
-  ).join("\n");
+  const feedContext = topItems.map((item, i) => {
+    const channel = item.channel ? ` [${item.channel}]` : "";
+    const length = item.rawLengthHint ? `, ${item.rawLengthHint}` : "";
+    const echoes = item.relatedMentions?.length ? `, ${item.relatedMentions.length} related` : "";
+    const source = item.sourceName || item.source;
+    return `${i + 1}. "${item.title}" (${source}${channel}${length}${echoes}) - ${item.scoring.whyRead || ""}`;
+  }).join("\n");
 
   const libraryContext = userSources.length > 0
     ? userSources.slice(0, 10).map(s => `- "${s.title}" (${s.concepts.slice(0, 3).join(", ")})`).join("\n")

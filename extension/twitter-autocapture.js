@@ -71,6 +71,130 @@
     true // capture phase
   );
 
+  let xRadarEnabled = true;
+  const radarSeen = new Set();
+  const radarQueue = [];
+  let radarTimer = null;
+
+  chrome.storage.local.get("xRadarEnabled", (result) => {
+    xRadarEnabled = result.xRadarEnabled !== false;
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.xRadarEnabled) {
+      xRadarEnabled = changes.xRadarEnabled.newValue !== false;
+    }
+  });
+
+  function uniqueLinks(links) {
+    return [...new Set(links)].slice(0, 5);
+  }
+
+  function extractTweet(article) {
+    if (article.parentElement?.closest('article[data-testid="tweet"]')) return null;
+    const time = article.querySelector("time");
+    const statusLink = time?.closest("a[href*='/status/']");
+    const href = statusLink?.getAttribute("href");
+    if (!href) return null;
+    const url = new URL(href, location.origin).href.split("?")[0];
+    const userText = article.querySelector('[data-testid="User-Name"]')?.innerText || "";
+    const handle = (userText.match(/@([A-Za-z0-9_]{1,15})/) || [])[1];
+    if (!handle) return null;
+    const texts = [...article.querySelectorAll('[data-testid="tweetText"]')]
+      .filter((node) => !node.closest('article[data-testid="tweet"]') || node.closest('article[data-testid="tweet"]') === article)
+      .map((node) => node.innerText.trim())
+      .filter(Boolean);
+    const ownText = texts[0] || "";
+    const quoteText = texts.slice(1).join("\n");
+    const outboundUrls = uniqueLinks(
+      [...article.querySelectorAll("a[href]")].flatMap((anchor) => {
+        try {
+          const parsed = new URL(anchor.href, location.origin);
+          const host = parsed.hostname.replace(/^www\./, "");
+          if (host === "x.com" || host === "twitter.com") return [];
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return [];
+          return [parsed.href.split("#")[0]];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    if (ownText.length < 40 && outboundUrls.length === 0 && !quoteText) return null;
+    const snippet = [ownText, quoteText].filter(Boolean).join("\n").slice(0, 1500);
+    return {
+      channel: "x",
+      sourceId: `x:@${handle.toLowerCase()}`,
+      sourceName: `@${handle}`,
+      authorHandle: `@${handle}`,
+      title: ownText.slice(0, 80) || `@${handle}`,
+      url,
+      publishedAt: time.getAttribute("datetime") || new Date().toISOString(),
+      snippet,
+      outboundUrls,
+    };
+  }
+
+  function mergeThread(batch) {
+    if (!/\/status\/\d+/.test(location.pathname)) return batch;
+    const groups = [];
+    for (const item of batch) {
+      const last = groups[groups.length - 1];
+      if (last && last.authorHandle === item.authorHandle) {
+        last.snippet = `${last.snippet}\n${item.snippet}`.slice(0, 1500);
+        last._count += 1;
+        last.rawLengthHint = `Thread (${last._count})`;
+        last.outboundUrls = uniqueLinks([...(last.outboundUrls || []), ...(item.outboundUrls || [])]);
+      } else {
+        groups.push({ ...item, _count: 1 });
+      }
+    }
+    return groups.map((item) => {
+      const copy = { ...item };
+      delete copy._count;
+      return copy;
+    });
+  }
+
+  function flushRadar() {
+    if (radarTimer) {
+      clearTimeout(radarTimer);
+      radarTimer = null;
+    }
+    if (!xRadarEnabled || radarQueue.length === 0) {
+      radarQueue.length = 0;
+      return;
+    }
+    const batch = radarQueue.splice(0, radarQueue.length);
+    chrome.runtime.sendMessage({ action: "radarIngest", items: mergeThread(batch) });
+  }
+
+  function queueTweet(article) {
+    if (!xRadarEnabled) return;
+    const item = extractTweet(article);
+    if (!item || radarSeen.has(item.url)) return;
+    radarSeen.add(item.url);
+    radarQueue.push(item);
+    if (radarQueue.length >= 10) flushRadar();
+    else if (!radarTimer) radarTimer = setTimeout(flushRadar, 10000);
+  }
+
+  const radarObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) queueTweet(entry.target);
+    }
+  }, { threshold: 0.5 });
+
+  function watchTweets() {
+    document.querySelectorAll('article[data-testid="tweet"]').forEach((article) => {
+      if (article.dataset.sbRadar) return;
+      article.dataset.sbRadar = "1";
+      radarObserver.observe(article);
+    });
+  }
+
+  const tweetChanges = new MutationObserver(watchTweets);
+  if (document.body) tweetChanges.observe(document.body, { childList: true, subtree: true });
+  watchTweets();
+
   function showToast(message, isError = false, durationMs = 2000) {
     const existing = document.getElementById("sb-autocapture-toast");
     if (existing) existing.remove();

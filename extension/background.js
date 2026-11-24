@@ -15,12 +15,17 @@ async function probePort(port) {
   return port;
 }
 
-async function getApiUrl() {
+const RADAR_QUEUE_KEY = "radarPendingQueue";
+const RADAR_QUEUE_CAP = 200;
+
+async function getServerOrigin() {
   // Fast path: the port that worked last time
   try {
     const { lastPort } = await chrome.storage.local.get("lastPort");
     if (lastPort) {
-      return `http://localhost:${await probePort(lastPort)}/api/capture`;
+      const origin = `http://localhost:${await probePort(lastPort)}`;
+      void flushRadarQueue(origin);
+      return origin;
     }
   } catch {}
 
@@ -28,9 +33,68 @@ async function getApiUrl() {
   try {
     const port = await Promise.any(PORTS.map(probePort));
     await chrome.storage.local.set({ lastPort: port });
-    return `http://localhost:${port}/api/capture`;
+    const origin = `http://localhost:${port}`;
+    void flushRadarQueue(origin);
+    return origin;
   } catch {
     return null;
+  }
+}
+
+async function getApiUrl() {
+  const origin = await getServerOrigin();
+  return origin ? `${origin}/api/capture` : null;
+}
+
+async function enqueueRadar(items) {
+  const stored = await chrome.storage.local.get(RADAR_QUEUE_KEY);
+  const pending = Array.isArray(stored[RADAR_QUEUE_KEY]) ? stored[RADAR_QUEUE_KEY] : [];
+  await chrome.storage.local.set({
+    [RADAR_QUEUE_KEY]: [...pending, ...items].slice(-RADAR_QUEUE_CAP),
+  });
+}
+
+async function flushRadarQueue(origin) {
+  try {
+    const stored = await chrome.storage.local.get(RADAR_QUEUE_KEY);
+    let pending = Array.isArray(stored[RADAR_QUEUE_KEY]) ? stored[RADAR_QUEUE_KEY] : [];
+    while (pending.length > 0) {
+      const batch = pending.slice(0, 100);
+      const response = await fetch(`${origin}/api/radar/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: batch }),
+      });
+      if (!response.ok) return;
+      pending = pending.slice(100);
+      await chrome.storage.local.set({ [RADAR_QUEUE_KEY]: pending });
+    }
+  } catch {
+    // Keep the queue for the next successful probe.
+  }
+}
+
+async function ingestRadarItems(items) {
+  if (!Array.isArray(items) || items.length === 0) return { success: true, ingested: 0 };
+  const origin = await getServerOrigin();
+  if (!origin) {
+    await enqueueRadar(items);
+    return { success: false, queued: true };
+  }
+  try {
+    const response = await fetch(`${origin}/api/radar/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    if (!response.ok) {
+      await enqueueRadar(items);
+      return { success: false, queued: true };
+    }
+    return await response.json();
+  } catch (error) {
+    await enqueueRadar(items);
+    return { success: false, queued: true, error: error.message };
   }
 }
 
@@ -58,6 +122,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getApiUrl()
       .then((apiUrl) => sendResponse({ port: apiUrl ? new URL(apiUrl).port : null }))
       .catch(() => sendResponse({ port: null }));
+    return true;
+  }
+  if (message.action === "radarIngest") {
+    ingestRadarItems(message.items || [])
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
   if (message.action === "openApp") {

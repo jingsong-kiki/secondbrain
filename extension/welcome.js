@@ -36,15 +36,36 @@ openBtn.addEventListener("click", () => {
 // Preference toggles (both default to enabled)
 const floatToggle = document.getElementById("float-toggle");
 const twitterToggle = document.getElementById("twitter-toggle");
-chrome.storage.local.get(["floatingButtonEnabled", "twitterAutocaptureEnabled"]).then((prefs) => {
+const browserRadarToggle = document.getElementById("browser-radar-toggle");
+const xRadarToggle = document.getElementById("x-radar-toggle");
+const excludedDomains = document.getElementById("excluded-domains");
+chrome.storage.local.get([
+  "floatingButtonEnabled",
+  "twitterAutocaptureEnabled",
+  "browserRadarEnabled",
+  "xRadarEnabled",
+  "radarExcludedDomains",
+]).then((prefs) => {
   floatToggle.checked = prefs.floatingButtonEnabled !== false;
   twitterToggle.checked = prefs.twitterAutocaptureEnabled !== false;
+  browserRadarToggle.checked = prefs.browserRadarEnabled !== false;
+  xRadarToggle.checked = prefs.xRadarEnabled !== false;
+  excludedDomains.value = prefs.radarExcludedDomains || "";
 });
 floatToggle.addEventListener("change", () => {
   chrome.storage.local.set({ floatingButtonEnabled: floatToggle.checked });
 });
 twitterToggle.addEventListener("change", () => {
   chrome.storage.local.set({ twitterAutocaptureEnabled: twitterToggle.checked });
+});
+browserRadarToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ browserRadarEnabled: browserRadarToggle.checked });
+});
+xRadarToggle.addEventListener("change", () => {
+  chrome.storage.local.set({ xRadarEnabled: xRadarToggle.checked });
+});
+excludedDomains.addEventListener("change", () => {
+  chrome.storage.local.set({ radarExcludedDomains: excludedDomains.value });
 });
 
 // Floating-button demo: clicking plays the real capture state sequence
